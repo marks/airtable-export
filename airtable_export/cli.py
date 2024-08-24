@@ -43,6 +43,11 @@ import yaml as yaml_
     is_flag=True,
     help="Save Airtable schema to output_path/_schema.json",
 )
+@click.option(
+    "--download-attachments",
+    is_flag=True,
+    help="Download attachments and save them to disk",
+)
 def cli(
     output_path,
     base_id,
@@ -56,6 +61,7 @@ def cli(
     yaml,
     sqlite,
     schema,
+    download_attachments,
 ):
     "Export Airtable data to YAML file on disk"
     output = pathlib.Path(output_path)
@@ -121,6 +127,38 @@ def cli(
                 ),
                 err=True,
             )
+        if download_attachments:
+            if verbose:
+                click.echo(
+                    "\tChecking for attachments to download...",
+                    err=True,
+                )
+            for record in records:
+                for field, cell_value in record.items():
+                    # If the cell value is a list and the first item is a
+                    # dictionary with a key "url", we assume it's an attachment field
+                    if isinstance(cell_value, list) and "url" in cell_value[0]:
+                        for attachment in cell_value:
+                            response = httpx.get(attachment["url"])
+                            response.raise_for_status()
+                            file_destination = (
+                                output
+                                / "attachments/{}/{}/{}__{}".format(
+                                    table,
+                                    record["airtable_id"],
+                                    attachment["id"],
+                                    attachment["filename"],
+                                )
+                            )
+                            file_destination.parent.mkdir(parents=True, exist_ok=True)
+                            file_destination.write_bytes(response.content)
+                            if verbose:
+                                click.echo(
+                                    "\t\tDownloaded attachment to '{}'".format(
+                                        file_destination
+                                    ),
+                                    err=True,
+                                )
 
 
 def list_tables(base_id, api_key, user_agent=None):
